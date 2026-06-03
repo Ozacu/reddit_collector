@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>r/Vancouver Sentiment Tracker · NLP Pipeline</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,600;0,700;1,400&family=Space+Grotesk:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:      #F2EFE9;
+  --paper:   #FAFAF7;
+  --ink:     #1A1A1A;
+  --ink2:    #3D3D3D;
+  --muted:   #888880;
+  --border:  rgba(26,26,26,0.12);
+  --border2: rgba(26,26,26,0.06);
+  --pos:     #1A7A3A;
+  --neg:     #C0392B;
+  --neu:     #1A4A7A;
+  --warn:    #8B6914;
+  --accent:  #1A7A3A;
+  --mono:    'JetBrains Mono', monospace;
+  --sans:    'Space Grotesk', sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--ink);font-family:var(--mono);font-size:13px;line-height:1.6;min-height:100vh}
+
+/* Scan lines texture */
+body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.012) 2px,rgba(0,0,0,0.012) 4px);pointer-events:none;z-index:0}
+
+/* ── HEADER ── */
+.header{background:var(--ink);color:#F2EFE9;padding:2rem 3rem;position:relative;overflow:hidden}
+.header::after{content:'';position:absolute;bottom:0;left:0;right:0;height:3px;background:repeating-linear-gradient(90deg,var(--pos) 0,var(--pos) 8px,transparent 8px,transparent 12px)}
+.header-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:1.5rem}
+.header-tag{font-size:0.65rem;letter-spacing:0.2em;text-transform:uppercase;color:rgba(242,239,233,0.45);margin-bottom:0.5rem}
+.header-title{font-size:clamp(1.4rem,3vw,2.2rem);font-weight:700;line-height:1.1;letter-spacing:-0.02em;font-family:var(--sans)}
+.header-title span{color:var(--pos);font-family:var(--mono);font-weight:400}
+.header-meta{display:grid;grid-template-columns:repeat(4,auto);gap:2rem;margin-top:1.5rem;padding-top:1.5rem;border-top:1px solid rgba(242,239,233,0.1)}
+.hm-item{}
+.hm-label{font-size:0.6rem;letter-spacing:0.15em;text-transform:uppercase;color:rgba(242,239,233,0.4);margin-bottom:0.2rem}
+.hm-val{font-size:1.1rem;font-weight:600;color:#F2EFE9;font-family:var(--sans)}
+.hm-val.green{color:#5DC87A}
+.hm-val.red{color:#E07070}
+.hm-val.blue{color:#70A8E0}
+
+/* Terminal badge */
+.term-badge{display:inline-flex;align-items:center;gap:0.4rem;font-size:0.65rem;letter-spacing:0.08em;padding:0.3rem 0.7rem;border:1px solid rgba(242,239,233,0.2);color:rgba(242,239,233,0.6)}
+.term-badge::before{content:'$ ';color:#5DC87A;font-weight:600}
+.blink{animation:blink 1s step-end infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}
+
+/* ── NAV TABS ── */
+.nav-tabs{background:var(--paper);border-bottom:2px solid var(--ink);display:flex;overflow-x:auto;position:sticky;top:0;z-index:50;padding:0 3rem}
+.nav-tab{font-size:0.68rem;letter-spacing:0.1em;text-transform:uppercase;padding:0.75rem 1.25rem;color:var(--muted);text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-2px;white-space:nowrap;transition:all 0.15s;cursor:pointer}
+.nav-tab:hover{color:var(--ink)}
+.nav-tab.active{color:var(--ink);border-bottom-color:var(--ink);font-weight:600}
+
+/* ── LAYOUT ── */
+.content{max-width:1280px;margin:0 auto;padding:2.5rem 3rem;position:relative;z-index:1}
+.section{margin-bottom:3.5rem}
+
+/* Section header */
+.sec-head{margin-bottom:1.75rem}
+.sec-prefix{font-size:0.6rem;letter-spacing:0.2em;text-transform:uppercase;color:var(--muted);display:flex;align-items:center;gap:0.5rem;margin-bottom:0.4rem}
+.sec-prefix::before{content:'';display:inline-block;width:20px;height:1px;background:var(--muted)}
+.sec-title{font-family:var(--sans);font-size:1.3rem;font-weight:600;color:var(--ink);letter-spacing:-0.01em}
+.sec-desc{font-size:0.75rem;color:var(--muted);margin-top:0.3rem;max-width:600px}
+
+/* ── KPI STRIP ── */
+.kpi-strip{display:grid;grid-template-columns:repeat(5,1fr);gap:0;border:1px solid var(--border);margin-bottom:2rem;background:var(--paper)}
+.kpi{padding:1.25rem 1.5rem;border-right:1px solid var(--border);position:relative}
+.kpi:last-child{border-right:none}
+.kpi-label{font-size:0.58rem;letter-spacing:0.15em;text-transform:uppercase;color:var(--muted);margin-bottom:0.5rem}
+.kpi-val{font-size:1.75rem;font-weight:700;line-height:1;font-family:var(--sans);letter-spacing:-0.03em}
+.kpi-val.green{color:var(--pos)}
+.kpi-val.red{color:var(--neg)}
+.kpi-val.blue{color:var(--neu)}
+.kpi-val.warn{color:var(--warn)}
+.kpi-val.ink{color:var(--ink)}
+.kpi-sub{font-size:0.65rem;color:var(--muted);margin-top:0.4rem}
+.kpi-bar{position:absolute;bottom:0;left:0;right:0;height:3px;background:var(--border2)}
+.kpi-bar-fill{height:100%}
+
+/* ── GRID ── */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:1.5rem;margin-bottom:1.5rem}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1.5rem;margin-bottom:1.5rem}
+.g13{display:grid;grid-template-columns:1fr 3fr;gap:1.5rem;margin-bottom:1.5rem}
+.gfull{margin-bottom:1.5rem}
+
+/* ── CARD ── */
+.card{background:var(--paper);border:1px solid var(--border);padding:1.25rem}
+.card-title{font-family:var(--sans);font-size:0.82rem;font-weight:600;color:var(--ink);margin-bottom:0.2rem}
+.card-sub{font-size:0.65rem;color:var(--muted);margin-bottom:1.1rem}
+.cw{position:relative;width:100%}
+.cw.h180{height:180px}.cw.h220{height:220px}.cw.h260{height:260px}.cw.h300{height:300px}
+
+/* ── TERMINAL BLOCK ── */
+.terminal{background:var(--ink);color:#A8C8A0;padding:1.25rem 1.5rem;font-size:0.72rem;line-height:1.8;border-left:3px solid var(--pos);margin-bottom:1.5rem}
+.terminal .prompt{color:#5DC87A;margin-right:0.5rem}
+.terminal .comment{color:#5A5A4A}
+.terminal .val-pos{color:#5DC87A}
+.terminal .val-neg{color:#E07070}
+.terminal .val-neu{color:#70A8E0}
+
+/* ── TOPIC TABLE ── */
+.topic-table{width:100%;border-collapse:collapse}
+.topic-table th{font-size:0.6rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);padding:0.5rem 0.75rem;border-bottom:1px solid var(--border);text-align:left;font-weight:500;background:var(--bg)}
+.topic-table td{padding:0.65rem 0.75rem;border-bottom:1px solid var(--border2);font-size:0.77rem;vertical-align:middle}
+.topic-table tr:last-child td{border-bottom:none}
+.topic-table tr:hover td{background:var(--bg)}
+
+/* Sentiment indicator */
+.sent-chip{display:inline-flex;align-items:center;gap:0.3rem;font-size:0.62rem;letter-spacing:0.06em;text-transform:uppercase;padding:0.15rem 0.5rem;border:1px solid;font-weight:500}
+.sent-chip.pos{border-color:var(--pos);color:var(--pos)}
+.sent-chip.neg{border-color:var(--neg);color:var(--neg)}
+.sent-chip.neu{border-color:var(--neu);color:var(--neu)}
+
+/* Inline bar */
+.ibar-wrap{display:flex;align-items:center;gap:0.5rem}
+.ibar{height:4px;background:var(--border);flex:1;overflow:hidden}
+.ibar-fill{height:100%}
+.ibar-num{font-size:0.65rem;min-width:38px;text-align:right;font-family:var(--mono)}
+
+/* ── POST ITEMS ── */
+.post-list{display:flex;flex-direction:column}
+.post-item{padding:0.85rem 1rem;border-bottom:1px solid var(--border2);display:flex;justify-content:space-between;gap:1.5rem;align-items:flex-start;transition:background 0.1s}
+.post-item:hover{background:var(--bg)}
+.post-item:last-child{border-bottom:none}
+.post-title{font-family:var(--sans);font-size:0.82rem;color:var(--ink);line-height:1.4;margin-bottom:0.35rem}
+.post-tags{display:flex;gap:0.4rem;flex-wrap:wrap}
+.ptag{font-size:0.58rem;letter-spacing:0.08em;text-transform:uppercase;padding:0.12rem 0.4rem;border:1px solid var(--border);color:var(--muted);background:var(--bg)}
+.post-right{text-align:right;flex-shrink:0}
+.post-score-val{font-family:var(--sans);font-size:1rem;font-weight:600;color:var(--ink);line-height:1}
+.post-score-label{font-size:0.58rem;color:var(--muted);margin-top:0.15rem}
+
+/* ── INSIGHT BOXES ── */
+.insights{display:grid;grid-template-columns:repeat(3,1fr);gap:1.25rem;margin-bottom:2rem}
+.insight{background:var(--paper);border:1px solid var(--border);border-top:3px solid var(--ink);padding:1.1rem}
+.ins-num{font-family:var(--sans);font-size:2rem;font-weight:700;line-height:1;letter-spacing:-0.03em;margin-bottom:0.4rem}
+.ins-num.green{color:var(--pos)}
+.ins-num.red{color:var(--neg)}
+.ins-num.warn{color:var(--warn)}
+.ins-label{font-size:0.6rem;letter-spacing:0.12em;text-transform:uppercase;color:var(--muted);margin-bottom:0.4rem}
+.ins-desc{font-size:0.73rem;color:var(--ink2);line-height:1.5}
+
+/* ── METHOD STEPS ── */
+.method-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:1.25rem}
+.method-step{background:var(--paper);border:1px solid var(--border);padding:1.25rem;position:relative}
+.step-num{font-size:3rem;font-weight:700;color:var(--border);position:absolute;top:0.5rem;right:1rem;font-family:var(--sans);line-height:1}
+.step-title{font-family:var(--sans);font-size:0.85rem;font-weight:600;margin-bottom:0.6rem;color:var(--ink)}
+.step-body{font-size:0.72rem;color:var(--muted);line-height:1.75}
+.step-body .cmd{color:var(--pos);font-weight:600}
+
+/* ── FOOTER ── */
+.footer{background:var(--ink);color:rgba(242,239,233,0.4);padding:1.5rem 3rem;font-size:0.65rem;display:flex;justify-content:space-between;align-items:center;position:relative;z-index:1}
+.footer strong{color:rgba(242,239,233,0.8)}
+
+@media(max-width:900px){
+  .header,.nav-tabs,.content,.footer{padding-left:1.25rem;padding-right:1.25rem}
+  .kpi-strip{grid-template-columns:repeat(3,1fr)}
+  .kpi:nth-child(3){border-right:none}
+  .kpi:nth-child(4),.kpi:nth-child(5){border-top:1px solid var(--border)}
+  .g2,.g3,.g13{grid-template-columns:1fr}
+  .insights,.method-grid{grid-template-columns:1fr}
+  .header-meta{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="header">
+  <div class="header-top">
+    <div>
+      <div class="header-tag">NLP Pipeline · Data Engineering Project</div>
+      <h1 class="header-title">r/Vancouver<br><span>sentiment_tracker</span><span class="blink">_</span></h1>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:0.5rem;align-items:flex-end">
+      <span class="term-badge">python collector.py --live</span>
+      <span class="term-badge">pipeline.py --nlp vader</span>
+    </div>
+  </div>
+  <div class="header-meta">
+    <div class="hm-item">
+      <div class="hm-label">Posts analyzed</div>
+      <div class="hm-val">600</div>
+    </div>
+    <div class="hm-item">
+      <div class="hm-label">Subreddits</div>
+      <div class="hm-val">3</div>
+    </div>
+    <div class="hm-item">
+      <div class="hm-label">Avg sentiment</div>
+      <div class="hm-val green">+0.065</div>
+    </div>
+    <div class="hm-item">
+      <div class="hm-label">Most negative topic</div>
+      <div class="hm-val red">crime</div>
+    </div>
+  </div>
+</header>
+
+<!-- NAV TABS -->
+<nav class="nav-tabs">
+  <a href="#overview"  class="nav-tab active">01 / Overview</a>
+  <a href="#topics"    class="nav-tab">02 / Topics</a>
+  <a href="#trend"     class="nav-tab">03 / Trend</a>
+  <a href="#timing"    class="nav-tab">04 / Timing</a>
+  <a href="#viral"     class="nav-tab">05 / Top Posts</a>
+  <a href="#method"    class="nav-tab">06 / Methodology</a>
+</nav>
+
+<div class="content">
+
+  <!-- 01 OVERVIEW -->
+  <div class="section" id="overview">
+    <div class="sec-head">
+      <div class="sec-prefix">Section 01</div>
+      <div class="sec-title">Overview</div>
+      <div class="sec-desc">Aggregate sentiment metrics across 600 posts from r/vancouver, r/britishcolumbia, and r/vancouverhousing.</div>
+    </div>
+
+    <div class="terminal">
+      <div><span class="prompt">$</span> <span class="comment"># VADER compound score: -1.0 (most negative) → +1.0 (most positive)</span></div>
+      <div><span class="prompt">$</span> python pipeline.py --input posts_raw.csv --output posts_sentiment.csv</div>
+      <div><span class="prompt">→</span> positive: <span class="val-pos">157 posts (26.2%)</span> · neutral: <span class="val-neu">345 posts (57.5%)</span> · negative: <span class="val-neg">98 posts (16.3%)</span></div>
+      <div><span class="prompt">→</span> avg_compound: <span class="val-pos">+0.065</span> · most_negative_topic: <span class="val-neg">crime (-0.158)</span> · most_positive: <span class="val-pos">general (+0.289)</span></div>
+    </div>
+
+    <div class="kpi-strip">
+      <div class="kpi">
+        <div class="kpi-label">Total posts</div>
+        <div class="kpi-val ink">600</div>
+        <div class="kpi-sub">3 subreddits · 60 days</div>
+        <div class="kpi-bar"><div class="kpi-bar-fill" style="width:100%;background:var(--ink)"></div></div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Positive</div>
+        <div class="kpi-val green">26.2%</div>
+        <div class="kpi-sub">157 posts</div>
+        <div class="kpi-bar"><div class="kpi-bar-fill" style="width:26%;background:var(--pos)"></div></div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Neutral</div>
+        <div class="kpi-val blue">57.5%</div>
+        <div class="kpi-sub">345 posts</div>
+        <div class="kpi-bar"><div class="kpi-bar-fill" style="width:57%;background:var(--neu)"></div></div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Negative</div>
+        <div class="kpi-val red">16.3%</div>
+        <div class="kpi-sub">98 posts</div>
+        <div class="kpi-bar"><div class="kpi-bar-fill" style="width:16%;background:var(--neg)"></div></div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Repeat offenders</div>
+        <div class="kpi-val warn">19.5%</div>
+        <div class="kpi-sub">Transit: controversial</div>
+        <div class="kpi-bar"><div class="kpi-bar-fill" style="width:19%;background:var(--warn)"></div></div>
+      </div>
+    </div>
+
+    <div class="insights">
+      <div class="insight">
+        <div class="ins-label">Most negative topic</div>
+        <div class="ins-num red">crime</div>
+        <div class="ins-desc">Avg score −0.158. DTES discussions and break-in reports drive 38.6% of posts to negative — highest of any category.</div>
+      </div>
+      <div class="insight">
+        <div class="ins-label">Most positive topic</div>
+        <div class="ins-num green">general</div>
+        <div class="ins-desc">Avg score +0.289. Weekend plans, hidden gem recommendations, and random acts of kindness dominate the positive end.</div>
+      </div>
+      <div class="insight">
+        <div class="ins-label">Most controversial</div>
+        <div class="ins-num warn">transit</div>
+        <div class="ins-desc">19.5% controversial rate — highest of any topic. Bus lane debates and SkyTrain reliability posts generate intense comment threads.</div>
+      </div>
+    </div>
+
+    <div class="g2">
+      <div class="card">
+        <div class="card-title">Sentiment Distribution</div>
+        <div class="card-sub">All 600 posts by VADER compound label</div>
+        <div class="cw h220"><canvas id="sentDonut"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Avg Sentiment by Subreddit</div>
+        <div class="card-sub">Compound score per community — all slightly positive</div>
+        <div class="cw h220"><canvas id="subBar"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 02 TOPICS -->
+  <div class="section" id="topics">
+    <div class="sec-head">
+      <div class="sec-prefix">Section 02</div>
+      <div class="sec-title">Topic Analysis</div>
+      <div class="sec-desc">Posts auto-classified by keyword matching. Sentiment and engagement metrics per topic.</div>
+    </div>
+
+    <div class="g2">
+      <div class="card">
+        <div class="card-title">Sentiment Score by Topic</div>
+        <div class="card-sub">Compound score: negative ← 0 → positive</div>
+        <div class="cw h260"><canvas id="topicSentBar"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Positive vs. Negative Share</div>
+        <div class="card-sub">Diverging bars — positive right, negative left</div>
+        <div class="cw h260"><canvas id="topicPosNeg"></canvas></div>
+      </div>
+    </div>
+
+    <div class="card gfull">
+      <div class="card-title">Full Topic Breakdown</div>
+      <div class="card-sub">All 8 topics sorted most negative → most positive</div>
+      <table class="topic-table" style="margin-top:0.75rem">
+        <thead>
+          <tr>
+            <th>Topic</th>
+            <th>Posts</th>
+            <th>Avg Score</th>
+            <th>Sentiment</th>
+            <th>Positive %</th>
+            <th>Negative %</th>
+            <th>Controversial %</th>
+            <th>Engagement</th>
+          </tr>
+        </thead>
+        <tbody id="topicTbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 03 TREND -->
+  <div class="section" id="trend">
+    <div class="sec-head">
+      <div class="sec-prefix">Section 03</div>
+      <div class="sec-title">Sentiment Over Time</div>
+      <div class="sec-desc">Daily average compound score with 7-day rolling average. Nov 2023 – Jan 2024.</div>
+    </div>
+    <div class="card gfull">
+      <div class="card-title">Daily Sentiment + 7-Day Rolling Average</div>
+      <div class="card-sub">Bars = daily avg (green positive / red negative) · Line = 7-day rolling mean</div>
+      <div class="cw h260"><canvas id="trendLine"></canvas></div>
+    </div>
+    <div class="g2">
+      <div class="card">
+        <div class="card-title">Daily Post Volume</div>
+        <div class="card-sub">Number of posts collected per day</div>
+        <div class="cw h180"><canvas id="volumeBar"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Positive vs. Negative % — Daily</div>
+        <div class="card-sub">Area chart showing daily sentiment composition</div>
+        <div class="cw h180"><canvas id="posNegArea"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 04 TIMING -->
+  <div class="section" id="timing">
+    <div class="sec-head">
+      <div class="sec-prefix">Section 04</div>
+      <div class="sec-title">Post Timing Patterns</div>
+      <div class="sec-desc">When does r/Vancouver post — and does the time of day affect sentiment?</div>
+    </div>
+    <div class="g2">
+      <div class="card">
+        <div class="card-title">Sentiment by Hour of Day (UTC)</div>
+        <div class="card-sub">Afternoon hours (15–17h) trend more negative</div>
+        <div class="cw h220"><canvas id="hourlyLine"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-title">Sentiment by Day of Week</div>
+        <div class="card-sub">Friday is the most positive day; Saturday the least</div>
+        <div class="cw h220"><canvas id="dowBar"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 05 TOP POSTS -->
+  <div class="section" id="viral">
+    <div class="sec-head">
+      <div class="sec-prefix">Section 05</div>
+      <div class="sec-title">Top Posts by Score</div>
+      <div class="sec-desc">Highest-scoring posts in the dataset — what actually resonates with r/Vancouver.</div>
+    </div>
+    <div class="card">
+      <div class="card-title">Top 8 Posts</div>
+      <div class="card-sub">Ranked by Reddit score (upvotes − downvotes)</div>
+      <div class="post-list" id="postList"></div>
+    </div>
+  </div>
+
+  <!-- 06 METHODOLOGY -->
+  <div class="section" id="method">
+    <div class="sec-head">
+      <div class="sec-prefix">Section 06</div>
+      <div class="sec-title">Methodology</div>
+      <div class="sec-desc">Full pipeline: data collection → NLP → aggregation → dashboard.</div>
+    </div>
+
+    <div class="terminal" style="margin-bottom:1.5rem">
+      <div><span class="prompt">$</span> <span class="comment"># Full pipeline — runs end to end in ~45 seconds</span></div>
+      <div><span class="prompt">$</span> python <span class="val-neu">collector.py</span> --subreddits vancouver,britishcolumbia,vancouverhousing --pages 3</div>
+      <div><span class="prompt">→</span> 600 posts collected → <span class="val-pos">posts_raw.csv</span></div>
+      <div><span class="prompt">$</span> python <span class="val-neu">sentiment.py</span> --model vader --features engagement,controversy</div>
+      <div><span class="prompt">→</span> scored 600 posts → <span class="val-pos">posts_sentiment.csv</span> · <span class="val-pos">topic_summary.csv</span> · <span class="val-pos">daily_sentiment.csv</span></div>
+      <div><span class="prompt">$</span> python <span class="val-neu">load.py</span> --target supabase --table reddit_vancouver</div>
+      <div><span class="prompt">→</span> <span class="val-pos">3 tables loaded</span> · dashboard ready</div>
+    </div>
+
+    <div class="method-grid">
+      <div class="method-step">
+        <div class="step-num">01</div>
+        <div class="step-title">Collection</div>
+        <div class="step-body">
+          Reddit public JSON API — no OAuth required<br>
+          <span class="cmd">requests</span> with polite 2s delays<br>
+          Pagination via <span class="cmd">after</span> cursor token<br>
+          3 subreddits · 100 posts/page · 3 pages<br>
+          Keyword topic classifier on ingest
+        </div>
+      </div>
+      <div class="method-step">
+        <div class="step-num">02</div>
+        <div class="step-title">NLP Pipeline</div>
+        <div class="step-body">
+          <span class="cmd">VADER</span> SentimentIntensityAnalyzer<br>
+          Compound score −1 → +1 per post<br>
+          Label threshold: ±0.05 for pos/neg/neu<br>
+          Engagement score: log-weighted upvotes + comments<br>
+          Controversy: high comments × low upvote ratio
+        </div>
+      </div>
+      <div class="method-step">
+        <div class="step-num">03</div>
+        <div class="step-title">Output</div>
+        <div class="step-body">
+          CSVs → <span class="cmd">Supabase</span> PostgreSQL<br>
+          Aggregates: topic · daily · hourly · DOW<br>
+          Dashboard: <span class="cmd">Chart.js</span> + vanilla JS<br>
+          Zero-dependency single HTML file<br>
+          Re-runnable — refresh any time
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- FOOTER -->
+<footer class="footer">
+  <div>Data source: Reddit Public JSON API · r/vancouver · r/britishcolumbia · r/vancouverhousing</div>
+  <div>Built by <strong>Oscar Castro</strong> · NLP: VADER · Pipeline: Python + pandas</div>
+</footer>
+
+<script>
+// Chart defaults — light theme
+Chart.defaults.color = '#888880';
+Chart.defaults.borderColor = 'rgba(26,26,26,0.08)';
+Chart.defaults.font.family = "'JetBrains Mono', monospace";
+Chart.defaults.font.size = 11;
+
+const C = {
+  pos:    '#1A7A3A', posA: 'rgba(26,122,58,0.18)',
+  neg:    '#C0392B', negA: 'rgba(192,57,43,0.18)',
+  neu:    '#1A4A7A', neuA: 'rgba(26,74,122,0.18)',
+  warn:   '#8B6914', warnA:'rgba(139,105,20,0.18)',
+  ink:    '#1A1A1A', inkA: 'rgba(26,26,26,0.08)',
+};
+
+const TOPICS=[{topic:"crime",post_count:70,avg_sentiment:-0.158,pct_positive:20.0,pct_negative:38.6,avg_score:198.4,avg_comments:31.7,avg_engagement:3.9,controversial_pct:11.4},{topic:"cost_of_living",post_count:73,avg_sentiment:-0.077,pct_positive:0.0,pct_negative:19.2,avg_score:195.4,avg_comments:36.6,avg_engagement:4.037,controversial_pct:8.2},{topic:"weather",post_count:81,avg_sentiment:-0.041,pct_positive:21.0,pct_negative:56.8,avg_score:150.2,avg_comments:25.7,avg_engagement:3.729,controversial_pct:11.1},{topic:"transit",post_count:82,avg_sentiment:0.0,pct_positive:0.0,pct_negative:0.0,avg_score:239.8,avg_comments:42.3,avg_engagement:4.227,controversial_pct:19.5},{topic:"development",post_count:90,avg_sentiment:0.112,pct_positive:24.4,pct_negative:0.0,avg_score:199.2,avg_comments:32.8,avg_engagement:3.954,controversial_pct:6.7},{topic:"housing",post_count:58,avg_sentiment:0.153,pct_positive:39.7,pct_negative:0.0,avg_score:218.6,avg_comments:44.8,avg_engagement:4.263,controversial_pct:1.7},{topic:"community",post_count:64,avg_sentiment:0.253,pct_positive:57.8,pct_negative:17.2,avg_score:199.3,avg_comments:33.3,avg_engagement:4.036,controversial_pct:7.8},{topic:"general",post_count:82,avg_sentiment:0.289,pct_positive:53.7,pct_negative:0.0,avg_score:234.9,avg_comments:38.3,avg_engagement:4.035,controversial_pct:13.4}];
+
+const DAILY=[{d:"Nov 15",s:-0.009,p:16.7,n:25.0,r7:-0.009,v:12},{d:"Nov 16",s:0.169,p:42.9,n:0.0,r7:0.08,v:7},{d:"Nov 17",s:0.058,p:50.0,n:25.0,r7:0.073,v:4},{d:"Nov 18",s:0.069,p:25.0,n:12.5,r7:0.072,v:8},{d:"Nov 19",s:-0.007,p:7.1,n:14.3,r7:0.056,v:14},{d:"Nov 20",s:0.162,p:35.7,n:7.1,r7:0.074,v:14},{d:"Nov 21",s:-0.105,p:14.3,n:50.0,r7:0.048,v:14},{d:"Nov 22",s:0.09,p:45.5,n:18.2,r7:0.062,v:11},{d:"Nov 23",s:-0.127,p:11.1,n:33.3,r7:0.02,v:9},{d:"Nov 24",s:0.1,p:33.3,n:25.0,r7:0.026,v:12},{d:"Nov 25",s:-0.041,p:6.2,n:18.8,r7:0.01,v:16},{d:"Nov 26",s:0.2,p:33.3,n:11.1,r7:0.04,v:9},{d:"Nov 27",s:0.014,p:25.0,n:12.5,r7:0.019,v:8},{d:"Nov 28",s:0.099,p:27.3,n:9.1,r7:0.048,v:11},{d:"Nov 29",s:0.119,p:27.3,n:9.1,r7:0.052,v:11},{d:"Nov 30",s:0.17,p:33.3,n:0.0,r7:0.094,v:6},{d:"Dec 1",s:0.141,p:27.3,n:0.0,r7:0.1,v:11},{d:"Dec 2",s:0.04,p:12.5,n:12.5,r7:0.112,v:8},{d:"Dec 3",s:0.085,p:22.2,n:0.0,r7:0.095,v:9},{d:"Dec 4",s:0.12,p:20.0,n:0.0,r7:0.111,v:5},{d:"Dec 5",s:0.036,p:20.0,n:20.0,r7:0.102,v:10},{d:"Dec 6",s:0.073,p:28.6,n:14.3,r7:0.095,v:7},{d:"Dec 7",s:0.231,p:41.7,n:0.0,r7:0.104,v:12},{d:"Dec 8",s:0.134,p:37.5,n:12.5,r7:0.103,v:8},{d:"Dec 9",s:-0.095,p:0.0,n:20.0,r7:0.083,v:5},{d:"Dec 10",s:0.045,p:22.2,n:22.2,r7:0.078,v:9},{d:"Dec 11",s:0.224,p:50.0,n:10.0,r7:0.093,v:10},{d:"Dec 12",s:0.043,p:30.0,n:20.0,r7:0.094,v:10},{d:"Dec 13",s:0.153,p:33.3,n:0.0,r7:0.105,v:12},{d:"Dec 14",s:-0.011,p:28.6,n:35.7,r7:0.07,v:14}];
+
+const HOURLY=[{h:0,s:0.14},{h:1,s:0.119},{h:2,s:0.117},{h:3,s:0.052},{h:4,s:0.126},{h:5,s:0.055},{h:6,s:0.168},{h:7,s:0.022},{h:8,s:0.23},{h:9,s:0.038},{h:10,s:0.007},{h:11,s:0.081},{h:12,s:0.257},{h:13,s:0.073},{h:14,s:0.071},{h:15,s:-0.06},{h:16,s:0.025},{h:17,s:-0.052},{h:18,s:-0.008},{h:19,s:0.097},{h:20,s:-0.005},{h:21,s:0.062},{h:22,s:-0.023},{h:23,s:0.056}];
+
+const DOW=[{d:"Mon",s:0.092},{d:"Tue",s:0.026},{d:"Wed",s:0.094},{d:"Thu",s:0.059},{d:"Fri",s:0.101},{d:"Sat",s:0.009},{d:"Sun",s:0.071}];
+
+const TOP_POSTS=[{title:"Anyone else feel unsafe on transit lately?",topic:"transit",score:1123,num_comments:69,sentiment:"neutral",sentiment_score:0.0,subreddit:"r/vancouverhousing"},{title:"What's everyone doing this weekend?",topic:"general",score:1111,num_comments:206,sentiment:"neutral",sentiment_score:0.0,subreddit:"r/britishcolumbia"},{title:"Downtown Eastside getting worse?",topic:"crime",score:1102,num_comments:46,sentiment:"negative",sentiment_score:-0.4767,subreddit:"r/britishcolumbia"},{title:"New rezoning proposal for Commercial Drive",topic:"development",score:1047,num_comments:59,sentiment:"neutral",sentiment_score:0.0,subreddit:"r/vancouverhousing"},{title:"Best hidden gem restaurants in East Van?",topic:"community",score:986,num_comments:307,sentiment:"positive",sentiment_score:0.6369,subreddit:"r/vancouver"},{title:"SkyTrain delays AGAIN",topic:"transit",score:895,num_comments:89,sentiment:"neutral",sentiment_score:0.0,subreddit:"r/britishcolumbia"},{title:"New bus lane on Broadway — thoughts?",topic:"transit",score:891,num_comments:192,sentiment:"neutral",sentiment_score:0.0,subreddit:"r/britishcolumbia"},{title:"Break-in on my street last night",topic:"crime",score:859,num_comments:281,sentiment:"neutral",sentiment_score:0.0,subreddit:"r/vancouver"}];
+
+// ── Charts ────────────────────────────────────────────────────────────────────
+
+// Donut
+new Chart(document.getElementById('sentDonut'),{type:'doughnut',data:{labels:['Positive','Neutral','Negative'],datasets:[{data:[157,345,98],backgroundColor:[C.pos,C.neu,C.neg],borderWidth:3,borderColor:'#FAFAF7'}]},options:{responsive:true,maintainAspectRatio:false,cutout:'68%',plugins:{legend:{position:'right',labels:{padding:14,boxWidth:10,boxHeight:10,font:{size:11}}},tooltip:{callbacks:{label:ctx=>` ${ctx.label}: ${ctx.parsed} (${(ctx.parsed/600*100).toFixed(1)}%)`}}}}});
+
+// Subreddit bar
+new Chart(document.getElementById('subBar'),{type:'bar',data:{labels:['r/britishcolumbia','r/vancouver','r/vancouverhousing'],datasets:[{data:[0.069,0.057,0.069],backgroundColor:[C.posA,C.neuA,C.warnA],borderColor:[C.pos,C.neu,C.warn],borderWidth:2,borderRadius:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{min:-0.05,max:0.15,grid:{color:C.inkA}},x:{grid:{display:false}}}}});
+
+// Topic sentiment
+const tColors=TOPICS.map(t=>t.avg_sentiment<0?C.negA:t.avg_sentiment<0.1?C.neuA:C.posA);
+const tBorder=TOPICS.map(t=>t.avg_sentiment<0?C.neg:t.avg_sentiment<0.1?C.neu:C.pos);
+new Chart(document.getElementById('topicSentBar'),{type:'bar',data:{labels:TOPICS.map(t=>t.topic),datasets:[{data:TOPICS.map(t=>t.avg_sentiment),backgroundColor:tColors,borderColor:tBorder,borderWidth:2,borderRadius:0}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{min:-0.25,max:0.4,grid:{color:C.inkA}},y:{grid:{display:false}}}}});
+
+// Topic pos/neg
+new Chart(document.getElementById('topicPosNeg'),{type:'bar',data:{labels:TOPICS.map(t=>t.topic),datasets:[{label:'Positive %',data:TOPICS.map(t=>t.pct_positive),backgroundColor:C.posA,borderColor:C.pos,borderWidth:2,borderRadius:0},{label:'Negative %',data:TOPICS.map(t=>-t.pct_negative),backgroundColor:C.negA,borderColor:C.neg,borderWidth:2,borderRadius:0}]},options:{responsive:true,maintainAspectRatio:false,indexAxis:'y',plugins:{legend:{labels:{padding:10,boxWidth:8,boxHeight:8}}},scales:{x:{grid:{color:C.inkA},ticks:{callback:v=>Math.abs(v)+'%'}},y:{grid:{display:false}}}}});
+
+// Topic table
+const tb=document.getElementById('topicTbody');
+TOPICS.forEach(t=>{
+  const s=t.avg_sentiment;
+  const cl=s<-0.05?'neg':s>0.05?'pos':'neu';
+  const fc=s<-0.05?C.neg:s>0.05?C.pos:C.neu;
+  const pct=(Math.abs(s)/0.35*100).toFixed(0);
+  tb.innerHTML+=`<tr>
+    <td style="font-family:var(--sans);font-weight:500;text-transform:capitalize">${t.topic.replace('_',' ')}</td>
+    <td>${t.post_count}</td>
+    <td>
+      <div class="ibar-wrap">
+        <div class="ibar"><div class="ibar-fill" style="width:${pct}%;background:${fc}"></div></div>
+        <span class="ibar-num" style="color:${fc}">${s>0?'+':''}${s}</span>
+      </div>
+    </td>
+    <td><span class="sent-chip ${cl}">${cl==='pos'?'positive':cl==='neg'?'negative':'neutral'}</span></td>
+    <td style="color:${C.pos}">${t.pct_positive}%</td>
+    <td style="color:${C.neg}">${t.pct_negative}%</td>
+    <td style="color:${C.warn}">${t.controversial_pct}%</td>
+    <td>${t.avg_engagement}</td>
+  </tr>`;
+});
+
+// Trend
+new Chart(document.getElementById('trendLine'),{type:'bar',data:{labels:DAILY.map(d=>d.d),datasets:[{label:'Daily',data:DAILY.map(d=>d.s),backgroundColor:DAILY.map(d=>d.s>=0?C.posA:C.negA),borderColor:DAILY.map(d=>d.s>=0?C.pos:C.neg),borderWidth:1,borderRadius:0,yAxisID:'y'},{type:'line',label:'7-Day Avg',data:DAILY.map(d=>d.r7),borderColor:C.ink,backgroundColor:'transparent',borderWidth:2,pointRadius:0,tension:0.4,yAxisID:'y'}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{padding:12,boxWidth:8,boxHeight:8}}},scales:{y:{grid:{color:C.inkA}},x:{ticks:{maxTicksLimit:10},grid:{display:false}}}}});
+
+// Volume
+new Chart(document.getElementById('volumeBar'),{type:'bar',data:{labels:DAILY.map(d=>d.d),datasets:[{data:DAILY.map(d=>d.v),backgroundColor:C.neuA,borderColor:C.neu,borderWidth:1,borderRadius:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{grid:{color:C.inkA}},x:{ticks:{maxTicksLimit:8},grid:{display:false}}}}});
+
+// Pos/neg area
+new Chart(document.getElementById('posNegArea'),{type:'line',data:{labels:DAILY.map(d=>d.d),datasets:[{label:'Positive %',data:DAILY.map(d=>d.p),borderColor:C.pos,backgroundColor:C.posA,fill:true,tension:0.4,borderWidth:1.5,pointRadius:0},{label:'Negative %',data:DAILY.map(d=>d.n),borderColor:C.neg,backgroundColor:C.negA,fill:true,tension:0.4,borderWidth:1.5,pointRadius:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{labels:{padding:10,boxWidth:8,boxHeight:8}}},scales:{y:{grid:{color:C.inkA}},x:{ticks:{maxTicksLimit:8},grid:{display:false}}}}});
+
+// Hourly
+new Chart(document.getElementById('hourlyLine'),{type:'line',data:{labels:HOURLY.map(h=>`${h.h}h`),datasets:[{data:HOURLY.map(h=>h.s),borderColor:C.ink,backgroundColor:'transparent',borderWidth:2,pointRadius:4,pointBackgroundColor:HOURLY.map(h=>h.s<0?C.neg:C.pos),pointBorderColor:HOURLY.map(h=>h.s<0?C.neg:C.pos),tension:0.3}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{grid:{color:C.inkA}},x:{grid:{display:false}}}}});
+
+// DOW
+new Chart(document.getElementById('dowBar'),{type:'bar',data:{labels:DOW.map(d=>d.d),datasets:[{data:DOW.map(d=>d.s),backgroundColor:DOW.map(d=>d.s>0.07?C.posA:C.neuA),borderColor:DOW.map(d=>d.s>0.07?C.pos:C.neu),borderWidth:2,borderRadius:0}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false}},scales:{y:{min:0,grid:{color:C.inkA}},x:{grid:{display:false}}}}});
+
+// Top posts
+const pl=document.getElementById('postList');
+TOP_POSTS.forEach(p=>{
+  const cl=p.sentiment==='positive'?'pos':p.sentiment==='negative'?'neg':'neu';
+  const item=document.createElement('div');
+  item.className='post-item';
+  item.innerHTML=`
+    <div style="flex:1">
+      <div class="post-title">${p.title}</div>
+      <div class="post-tags">
+        <span class="ptag">${p.topic.replace('_',' ')}</span>
+        <span class="ptag">${p.subreddit}</span>
+        <span class="sent-chip ${cl}">${p.sentiment}${p.sentiment_score!==0?' ('+p.sentiment_score+')':''}</span>
+      </div>
+    </div>
+    <div class="post-right">
+      <div class="post-score-val">▲ ${p.score.toLocaleString()}</div>
+      <div class="post-score-label">${p.num_comments} comments</div>
+    </div>
+  `;
+  pl.appendChild(item);
+});
+
+// Nav tabs active on scroll
+const secs=document.querySelectorAll('.section');
+const tabs=document.querySelectorAll('.nav-tab');
+secs.forEach(s=>new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+    if(e.isIntersecting){
+      tabs.forEach(t=>t.classList.remove('active'));
+      const a=document.querySelector(`.nav-tab[href="#${e.target.id}"]`);
+      if(a)a.classList.add('active');
+    }
+  });
+},{threshold:0.3}).observe(s));
+</script>
+</body>
+</html>
